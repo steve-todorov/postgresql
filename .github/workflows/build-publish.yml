@@ -42,6 +42,20 @@ jobs:
             type=sha
             type=raw,value=latest,enable={{is_default_branch}}
 
+      - name: Build image for testing (load into local daemon)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: smoke-test:candidate
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test extensions
+        run: ./scripts/smoke-test.sh smoke-test:candidate
+
       - name: Build and push (amd64)
         uses: docker/build-push-action@v7
         with:
@@ -51,4 +65,3 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max

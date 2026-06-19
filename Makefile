@@ -27,20 +27,9 @@ down:
 psql:
 	docker compose exec postgres psql -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-postgres}
 
-## Smoke test: boot a disposable container, create both extensions, prove they load.
+## Smoke test: boot a disposable container and verify both extensions work.
 verify: build
-	docker run --rm -e POSTGRES_PASSWORD=postgres --name pg-verify -d $(IMAGE) >/dev/null
-	@echo "Waiting for PostgreSQL to become ready..."
-	@until docker exec pg-verify pg_isready -U postgres >/dev/null 2>&1; do sleep 1; done
-	@echo "--- creating extensions ---"
-	docker exec pg-verify psql -U postgres -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pg_search;"
-	docker exec pg-verify psql -U postgres -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS vector;"
-	@echo "--- installed extensions ---"
-	docker exec pg-verify psql -U postgres -c "SELECT extname, extversion FROM pg_extension WHERE extname IN ('pg_search','vector');"
-	@echo "--- pgvector smoke ---"
-	docker exec pg-verify psql -U postgres -c "SELECT '[1,2,3]'::vector <-> '[3,2,1]'::vector AS l2_distance;"
-	docker stop pg-verify >/dev/null
-	@echo "OK: both extensions load."
+	./scripts/smoke-test.sh $(IMAGE)
 
 ## Remove the compose stack and its named volume.
 clean:
