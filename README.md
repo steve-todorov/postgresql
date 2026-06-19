@@ -50,7 +50,7 @@ make run            # run a throwaway container on :5432
 cp .env.example .env
 make up             # build + start in the background
 make psql           # open a psql shell
-make verify         # smoke test: create both extensions and prove they load
+make verify         # smoke test: boot the image and verify both extensions work
 make down           # stop the stack
 make clean          # stop and remove the data volume
 ```
@@ -75,10 +75,18 @@ docker pull ghcr.io/steve-todorov/postgresql:latest
 
 ## CI
 
-`.github/workflows/build-publish.yml` builds and pushes to `ghcr.io/<owner>/<repo>` on:
+`.github/workflows/build-publish.yml` builds, **smoke-tests, then publishes** to `ghcr.io/<owner>/<repo>`:
+
+1. Build the image and load it into the runner's Docker daemon (not pushed yet).
+2. Run `scripts/smoke-test.sh` against it — a broken image fails the job here and is never published.
+3. Push only after the smoke test passes (layers come from the build cache, so this is near-instant).
+
+Triggers:
 
 - push to `main` → `latest` + branch tag + git SHA
-- version tags `v*` → semver tags (`1.2.3`, `1.2`)
+- tags starting with a digit (e.g. `18.4-b1`) → an image tag matching the git tag name
 - manual `workflow_dispatch`
 
 It authenticates with the built-in `GITHUB_TOKEN` (`packages: write`); no extra secrets required.
+
+The same `scripts/smoke-test.sh <image>` runs locally (and via `make verify`): it boots a throwaway container and, for each extension, checks it is available, can be enabled, returns correct query results, and that `EXPLAIN` confirms the extension's index/scan is actually used.
