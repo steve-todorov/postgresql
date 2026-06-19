@@ -1,0 +1,12 @@
+# Local data volume (if a bind mount is used instead of the named volume)
+/data/
+/pgdata/
+
+# Local env with credentials — never commit secrets
+.env
+*.env
+!.env.example
+
+# OS cruft
+.DS_Store
+Thumbs.db
