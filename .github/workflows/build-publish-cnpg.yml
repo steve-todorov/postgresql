@@ -37,14 +37,15 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           flavor: |
-            prefix=cnpg-,onlatest=true
+            suffix=-cnpg,onlatest=true
           tags: |
             type=raw,value=18.4
             type=ref,event=tag
-            # The global flavor prefix is not applied to type=sha, so set it
-            # explicitly — otherwise the sha tag collides with the official
-            # image's `sha-<short>` tag in the same GHCR package.
-            type=sha,prefix=cnpg-sha-
+            # The global `-cnpg` suffix is applied to every tag, type=sha
+            # included (it stacks with sha's built-in `sha-` prefix), so the
+            # sha tag becomes `sha-<short>-cnpg` — already distinct from the
+            # official image's `sha-<short>` in the same GHCR package.
+            type=sha
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build image for testing (load into local daemon)
