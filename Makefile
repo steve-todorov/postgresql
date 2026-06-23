@@ -2,8 +2,9 @@
 PG_MAJOR            ?= 18
 PG_SEARCH_VERSION   ?= 0.24.0
 IMAGE               ?= postgresql-pg_search-pgvector:local
+CNPG_IMAGE          ?= postgresql-cnpg-pg_search-pgvector:local
 
-.PHONY: build run up down psql verify clean
+.PHONY: build build-cnpg run up down psql verify verify-cnpg clean
 
 ## Build the image locally.
 build:
@@ -34,3 +35,11 @@ verify: build
 ## Remove the compose stack and its named volume.
 clean:
 	docker compose down -v
+
+## Build the CloudNativePG flavor image locally.
+build-cnpg:
+	docker build -f Dockerfile.cnpg-v18.4 -t $(CNPG_IMAGE) .
+
+## Smoke test the CNPG flavor image (manual initdb + preload).
+verify-cnpg: build-cnpg
+	./scripts/smoke-test-cnpg.sh $(CNPG_IMAGE)

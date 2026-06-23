@@ -90,3 +90,36 @@ Triggers:
 It authenticates with the built-in `GITHUB_TOKEN` (`packages: write`); no extra secrets required.
 
 The same `scripts/smoke-test.sh <image>` runs locally (and via `make verify`): it boots a throwaway container and, for each extension, checks it is available, can be enabled, returns correct query results, and that `EXPLAIN` confirms the extension's index/scan is actually used.
+
+## CloudNativePG flavor
+
+`Dockerfile.cnpg-v18.4` builds a CloudNativePG **operand** variant: same `pg_search` + `pgvector` extensions, but based on the CNPG minimal operand image (`ghcr.io/cloudnative-pg/postgresql:18.4-minimal-trixie`) instead of the official `postgres` image. Built and published by `.github/workflows/build-publish-cnpg.yml` as `cnpg-`-prefixed tags (`cnpg-18.4`, `cnpg-latest`, `cnpg-sha-<sha>`):
+
+```bash
+docker pull ghcr.io/steve-todorov/postgresql:cnpg-18.4
+```
+
+The operand image has no standalone entrypoint, so it is meant to run under the CloudNativePG operator, not via `docker run`. To verify it locally:
+
+```bash
+make verify-cnpg    # builds the CNPG image and runs scripts/smoke-test-cnpg.sh
+```
+
+### Preloading is configured in the Cluster CR
+
+Unlike the official-based image, the CNPG flavor does **not** bake `shared_preload_libraries` into the image — CloudNativePG manages `postgresql.conf` and sets it from the Cluster spec:
+
+```yaml
+spec:
+  imageName: ghcr.io/steve-todorov/postgresql:cnpg-18.4
+  postgresql:
+    shared_preload_libraries:
+      - pg_search
+```
+
+Then, per database, create the extensions yourself (neither is enabled by default):
+
+```sql
+CREATE EXTENSION pg_search;   -- requires the preload above
+CREATE EXTENSION vector;      -- no preload needed
+```

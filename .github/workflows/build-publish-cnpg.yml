@@ -1,0 +1,74 @@
+name: Build and publish CNPG image
+
+on:
+  push:
+    branches: [main]
+    tags: ["[0-9]*"]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-publish-cnpg:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image tags and labels
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            prefix=cnpg-,onlatest=true
+          tags: |
+            type=raw,value=18.4
+            type=ref,event=tag
+            # The global flavor prefix is not applied to type=sha, so set it
+            # explicitly — otherwise the sha tag collides with the official
+            # image's `sha-<short>` tag in the same GHCR package.
+            type=sha,prefix=cnpg-sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build image for testing (load into local daemon)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.cnpg-v18.4
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: smoke-test:cnpg-candidate
+          cache-from: type=gha,scope=cnpg
+          cache-to: type=gha,mode=max,scope=cnpg
+
+      - name: Smoke test extensions
+        run: ./scripts/smoke-test-cnpg.sh smoke-test:cnpg-candidate
+
+      - name: Build and push (amd64)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.cnpg-v18.4
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=cnpg
