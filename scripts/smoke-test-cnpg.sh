@@ -91,6 +91,21 @@ SQL
     "Index Scan using smoke_vector_hnsw" "EXPLAIN confirms the HNSW index is used"
 }
 
+test_locale() {
+  info "libc locale (en_US.UTF-8)"
+  # The image must carry en_US.UTF-8 so monolith imports that replay
+  # `CREATE DATABASE ... LOCALE_PROVIDER = libc LOCALE 'en_US.UTF-8'`
+  # (pg_dump --create) don't abort. `locale -a` reports it as en_US.utf8.
+  assert_contains "$(docker exec "$CONTAINER" locale -a)" \
+    "en_US.utf8" "en_US.UTF-8 locale is generated in the image"
+  # Reproduce the exact statement a monolith restore replays.
+  psql_run "CREATE DATABASE smoke_locale TEMPLATE template0 LOCALE_PROVIDER libc LOCALE 'en_US.UTF-8';" >/dev/null
+  # Under the libc provider the locale lands in datcollate/datctype (datlocale
+  # is ICU/builtin-only and NULL here).
+  assert_eq "$(psql_val "SELECT datcollate FROM pg_database WHERE datname = 'smoke_locale';")" \
+    "en_US.UTF-8" "CREATE DATABASE with libc LOCALE 'en_US.UTF-8' succeeds"
+}
+
 test_pg_search() {
   info "pg_search"
   assert_contains "$(psql_val 'SHOW shared_preload_libraries;')" \
@@ -122,6 +137,7 @@ SQL
 main() {
   start_container
   test_connection
+  test_locale
   test_pgvector
   test_pg_search
   info "All CNPG smoke tests passed"
