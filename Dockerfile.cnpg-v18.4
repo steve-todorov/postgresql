@@ -1,0 +1,62 @@
+# syntax=docker/dockerfile:1
+
+# CloudNativePG operand flavor: CNPG minimal PG18 + pg_search (ParadeDB) + pgvector.
+#
+# Differs from ./Dockerfile (official postgres base) in two ways forced by CNPG:
+#   1. Built on the CNPG operand image, which already satisfies the operand
+#      contract (initdb/postgres/pg_ctl/pg_controldata/pg_basebackup, locales, du)
+#      and ships the PGDG apt source. It has NO standalone entrypoint (Cmd: bash).
+#   2. shared_preload_libraries is NOT baked in. CNPG manages postgresql.conf and
+#      sets it via .spec.postgresql.shared_preload_libraries in the Cluster CR.
+#
+# Both extensions are installed binaries-only and NOT enabled by default.
+
+FROM ghcr.io/cloudnative-pg/postgresql:18.4-minimal-trixie
+
+# --- Version pins -----------------------------------------------------------
+# Bump deliberately. When PG_SEARCH_VERSION changes you MUST also update the
+# sha256 in the `ADD --checksum` below, or the build will fail (by design).
+ARG PG_MAJOR=18
+ARG PG_DISTRO=trixie
+ARG PG_SEARCH_VERSION=0.24.0
+ARG PG_SEARCH_DEB_REVISION=1PARADEDB
+
+# Pinned to an exact PGDG package version. The PGDG apt *index* keeps only the
+# newest couple of versions; if this one ages out of the index the build will
+# fail (the .deb persists in the PGDG pool and can be installed by direct URL).
+ARG PGVECTOR_VERSION=0.8.2-1.pgdg13+1
+
+# CNPG operand images run as user 26 (postgres). Switch to root to install
+# packages, then drop back at the end.
+USER root
+
+# --- pgvector ---------------------------------------------------------------
+# The PGDG apt source is already configured in the base image. Extension name
+# in SQL is `vector`.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        "postgresql-${PG_MAJOR}-pgvector=${PGVECTOR_VERSION}" \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- pg_search (ParadeDB) ---------------------------------------------------
+# Pull the pinned, integrity-verified .deb straight from the GitHub release.
+ADD --checksum=sha256:f99267a6533a02f077824938a29e80586415b301928d4499d01cb4a1b9c7ccca \
+    "https://github.com/paradedb/paradedb/releases/download/v${PG_SEARCH_VERSION}/postgresql-${PG_MAJOR}-pg-search_${PG_SEARCH_VERSION}-${PG_SEARCH_DEB_REVISION}-${PG_DISTRO}_amd64.deb" \
+    /tmp/pg_search.deb
+
+# Install via apt (not bare `dpkg -i`) so runtime dependencies resolve.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends /tmp/pg_search.deb \
+    && rm -f /tmp/pg_search.deb \
+    && rm -rf /var/lib/apt/lists/*
+
+# IMPORTANT: unlike ./Dockerfile, we do NOT append shared_preload_libraries.
+# Under CNPG, set it in the Cluster CR:
+#   spec.postgresql.shared_preload_libraries: ["pg_search"]
+
+# Drop back to the unprivileged operand user CNPG expects.
+USER 26
+
+LABEL org.opencontainers.image.title="postgresql-cnpg-pg_search-pgvector" \
+      org.opencontainers.image.description="CloudNativePG operand: PostgreSQL ${PG_MAJOR} with pg_search (ParadeDB ${PG_SEARCH_VERSION}) and pgvector" \
+      org.opencontainers.image.source="https://github.com/steve-todorov/postgresql"
